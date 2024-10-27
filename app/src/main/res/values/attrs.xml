@@ -1,10 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <declare-styleable name="TimerView">
+    <declare-styleable name="timer_view">
         <attr name="completeColor" format="color" />
         <attr name="remainingColor" format="color" />
-        <attr name="icon" format="reference" />
+        <attr name="icon" format="reference"/>
+        <attr name="startTime" format="string" />
+        <attr name="startTimeTitle" format="string" />
         <attr name="timerTitleSize" format="dimension" />
+        <attr name="endTime" format="string" />
+        <attr name="endTimeTitle" format="string" />
         <attr name="timerTextSize" format="dimension" />
     </declare-styleable>
 </resources>

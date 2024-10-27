@@ -7,30 +7,81 @@ import android.graphics.Paint
 import android.graphics.PointF
 import android.graphics.Rect
 import android.graphics.drawable.Drawable
+import android.os.Build
 import android.util.AttributeSet
+import android.view.MotionEvent
 import android.view.View
+import androidx.annotation.RequiresApi
 import androidx.core.content.ContextCompat
-import androidx.core.view.marginBottom
-import androidx.core.view.marginLeft
-import androidx.core.view.marginRight
-import androidx.core.view.marginTop
+import java.time.LocalTime
+import java.util.Date
+import kotlin.time.Duration.Companion.hours
 
-class TimerView  @JvmOverloads constructor(ctx: Context, attrSet: AttributeSet? = null, defStyleAttr : Int = 0, defStyleRes:Int =0): View(ctx,attrSet,defStyleAttr,defStyleRes)  {
-    private val sunImage: Drawable? = ContextCompat.getDrawable(context, R.drawable.baseline_sunny)
+class TimerView @JvmOverloads constructor(
+    ctx: Context,
+    attrSet: AttributeSet? = null,
+    defStyleAttr: Int = 0,
+    defStyleRes: Int = 0
+) : View(ctx, attrSet, defStyleAttr, defStyleRes) {
+    private var sunImage: Drawable? = ContextCompat.getDrawable(context, R.drawable.baseline_sunny)
+    private var sunImageBounds = Rect()
     private var sunPosition = PointF()
-    private var percentage = 0.0
-    private var paddingX = 0
-    private var paddingY = 0
+    private var percentage = 0f
     private var circleRadius = 0f
+    private var completedColor = Color.GREEN
+    private var remainingColor = Color.GRAY
+    private var startTime = ""
+    private var startTimeTitle = ""
+    private var timerTitleSize = 40f
+    private var endTime = ""
+    private var endTimeTitle = ""
+    private var timerTextSize = 30f
+    private val paintText = Paint()
+    private var dX = 0f
 
     private val paintShape = Paint().apply {
-        color = Color.GREEN
         style = Paint.Style.FILL
         isAntiAlias = true
     }
 
-    private val paintText = Paint().apply {
-        textSize = 40f
+    init {
+        context.theme.obtainStyledAttributes(
+            attrSet,
+            R.styleable.timer_view,
+            0, 0
+        ).apply {
+            try {
+                getColor(R.styleable.timer_view_completeColor, completedColor).let {
+                    completedColor = it
+                }
+                getColor(R.styleable.timer_view_remainingColor, remainingColor).let {
+                    remainingColor = it
+                }
+                getDrawable(R.styleable.timer_view_icon)?.let {
+                    sunImage = it
+                }
+                getString(R.styleable.timer_view_startTime)?.let {
+                    startTime = it
+                }
+                getString(R.styleable.timer_view_startTimeTitle)?.let {
+                    startTimeTitle = it
+                }
+                getDimension(R.styleable.timer_view_timerTitleSize,timerTitleSize).let {
+                    timerTitleSize = it
+                }
+                getString(R.styleable.timer_view_endTime)?.let {
+                    endTime = it
+                }
+                getString(R.styleable.timer_view_endTimeTitle)?.let {
+                    endTimeTitle = it
+                }
+                getDimension(R.styleable.timer_view_timerTextSize, timerTextSize).let {
+                    timerTextSize = it
+                }
+            } finally {
+                recycle()
+            }
+        }
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -38,11 +89,9 @@ class TimerView  @JvmOverloads constructor(ctx: Context, attrSet: AttributeSet? 
         calculateSize()
     }
 
-    private fun calculateSize(){
-        paddingX = paddingLeft + paddingRight + marginLeft + marginRight
-        paddingY = paddingTop + paddingBottom + marginTop + marginBottom
-        circleRadius = (0.5f * width) - paddingX
-        sunPosition = getXYofAngle(180.0, circleRadius)
+    private fun calculateSize() {
+        circleRadius = (0.45f * width)
+        sunPosition = getXYofAngle(270.0, circleRadius)
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -58,14 +107,17 @@ class TimerView  @JvmOverloads constructor(ctx: Context, attrSet: AttributeSet? 
             sunPosition.x.toInt() - 50, sunPosition.y.toInt() - 50,
             sunPosition.x.toInt() + 50, sunPosition.y.toInt() + 50
         )
-        sunImage?.draw(canvas)
+        sunImage?.let {
+            it.draw(canvas)
+            sunImageBounds = it.copyBounds()
+        }
     }
 
     private fun drawCompleteArc(canvas: Canvas) {
         paintShape.apply {
             color = Color.GRAY
         }
-        for (i in 180.. (180 + percentage).toInt()) {
+        for (i in 180..(180 + percentage).toInt()) {
             if ((i - 180) % 10 < 5) {
                 val points = getXYofAngle(i.toDouble(), circleRadius)
                 canvas.drawCircle(points.x, points.y, 5f, paintShape)
@@ -85,48 +137,98 @@ class TimerView  @JvmOverloads constructor(ctx: Context, attrSet: AttributeSet? 
         }
     }
 
-    private fun drawText(canvas: Canvas){
+    private fun drawText(canvas: Canvas) {
         val textBounds = Rect()
 
         val startPoint = getXYofAngle(180.0, circleRadius)
-        drawTime(canvas,textBounds,startPoint,"07:09 AM","Sunrise")
+        drawTime(canvas, textBounds, startPoint, startTime, startTimeTitle)
 
 
         val endPoint = getXYofAngle(364.0, circleRadius)
-        drawTime(canvas,textBounds,endPoint,"07:09 AM","Sunset")
+        drawTime(canvas, textBounds, endPoint, endTime, endTimeTitle)
     }
 
-    private fun drawTime(canvas: Canvas, textBounds: Rect,point:PointF,time: String,name:String) {
+    private fun drawTime(
+        canvas: Canvas,
+        textBounds: Rect,
+        point: PointF,
+        time: String,
+        name: String
+    ) {
         paintText.apply {
-            color = Color.GREEN
-            textSize = 50f
+            color = completedColor
+            textSize = timerTitleSize
             getTextBounds(time, 0, time.length, textBounds)
         }
         val timeX = point.x - (textBounds.width() / 2f)
-        val timeY = point.y - (textBounds.height() / 2f) + 50f
-        canvas.drawText(time,timeX,timeY,paintText)
+        val timeY = point.y - (textBounds.height() / 2f) + (50f + textBounds.height())
+        canvas.drawText(time, timeX, timeY, paintText)
 
         paintText.apply {
-            color = Color.GRAY
-            textSize = 30f
+            color = remainingColor
+            textSize = timerTextSize
             getTextBounds(name, 0, name.length, textBounds)
         }
         val nameX = point.x - (textBounds.width() / 2f)
-        val nameY = point.y - (textBounds.height() / 2f) + 80f
-        canvas.drawText(name,nameX,nameY,paintText)
+        val nameY = timeY + timerTextSize
+        canvas.drawText(name, nameX, nameY, paintText)
+    }
+
+    fun setTime(time: Date){
+        if (time.isTimeBetween( ,Date())){
+            //Day
+        }
+        else{
+            //Night
+        }
+    }
+
+
+    fun Date.isTimeBetween(startTime: Date, endTime: Date): Boolean {
+        return if (endTime.after(startTime)) {
+            this.after(startTime) && this.before(endTime)
+        } else {
+            this.after(startTime) || this.before(endTime)
+        }
+    }
+
+    private fun moveViews(progress: Int) {
+        percentage =  (180.0 * (progress / 100.0)).toFloat()
+        sunPosition = getXYofAngle(180.0 + percentage, 0.45f * width)
+        invalidate()
     }
 
     private fun getXYofAngle(angle: Double, radius: Float): PointF {
         val radians = Math.toRadians(angle)
-        val x = (radius * Math.cos(radians) +  radius).toFloat() +  (paddingX / 2f)
-        val y = (radius * Math.sin(radians) + radius).toFloat()  + (paddingY / 2f)
+        val x = (radius * Math.cos(radians) + radius).toFloat() + (0.05f * width)
+        val y = (radius * Math.sin(radians) + radius).toFloat() + (0.05f * width)
         return PointF(x, y)
     }
 
-    fun moveViews(progress : Int){
-        percentage = 180.0 * (progress / 100.0)
-        sunPosition = getXYofAngle(180.0 + percentage , 0.4f * width)
-        invalidate()
+
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        when (event.action) {
+            MotionEvent.ACTION_DOWN -> {
+                if (sunImageBounds.contains(event.x.toInt(), event.y.toInt())) {
+                    dX = event.x - sunPosition.x
+                    return true
+                }
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val moveX = (event.x - dX).coerceIn(0f, width.toFloat())
+                val progress = calculatePercentage(moveX,width.toFloat())
+                moveViews(progress.toInt())
+                return true
+            }
+        }
+        return super.onTouchEvent(event)
     }
 
+    private fun calculatePercentage(part: Float, whole: Float): Float {
+        return if (whole != 0f) {
+            (part / whole) * 100
+        } else {
+            0f
+        }
+    }
 }
